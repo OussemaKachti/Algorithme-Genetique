@@ -1,5 +1,7 @@
 import random
 import ast
+import matplotlib.pyplot as plt
+import numpy as np
 
 def lire_dataset(fichier):
     with open(fichier, 'r') as f:
@@ -38,18 +40,16 @@ def lire_dataset(fichier):
     matrice = [r[:n] for r in matrice[:n]]
     return n, matrice
 
-N, cost_matrix = lire_dataset("assign100.txt")
-POP_SIZE      = 100
-MAX_GEN       = 500
-MUTATION_RATE = 0.3
 
-#Ce qu'elle fait : calcule le coût total d'une solution.
+N, cost_matrix = lire_dataset("assign100.txt")
+POP_SIZE      = 200
+MAX_GEN       = 1000
+MUTATION_RATE = 0.5
+
 
 def fitness(individu):
     return sum(cost_matrix[i][j] for i, j in enumerate(individu))
 
-
-#Ce qu'elle fait : crée une affectation aléatoire valide.
 
 def creer_individu():
     individu = list(range(N))
@@ -57,14 +57,10 @@ def creer_individu():
     return individu
 
 
-#Ce qu'elle fait : choisit le meilleur parmi 3 individus tirés au hasard.
-
 def selection(population):
     candidats = random.sample(population, 3)
     return min(candidats, key=fitness)
 
-
-#Ce qu'elle fait : mélange deux parents pour créer un enfant qui hérite du meilleur des deux.
 
 def croisement(p1, p2):
     point = random.randint(1, N - 1)
@@ -75,8 +71,6 @@ def croisement(p1, p2):
     return enfant
 
 
-#Ce qu'elle fait : avec 20% de chance, échange 2 positions pour explorer de nouvelles solutions.
-
 def mutation(individu):
     individu = individu[:]
     if random.random() < MUTATION_RATE:
@@ -85,15 +79,27 @@ def mutation(individu):
     return individu
 
 
-#Ce qu'elle fait : orchestre tout le processus sur MAX_GEN générations.
-
 def algorithme_genetique():
     random.seed(42)
     population = [creer_individu() for _ in range(POP_SIZE)]
 
+    historique_meilleur = []
+    historique_moyen    = []
+    historique_pire     = []
+    snapshots           = {}
+
+    def enregistrer(gen, pop):
+        couts = [fitness(ind) for ind in pop]
+        historique_meilleur.append(min(couts))
+        historique_moyen.append(sum(couts) / len(couts))
+        historique_pire.append(max(couts))
+        if gen in [0, MAX_GEN]:
+            snapshots[gen] = couts[:]
+
     print("=" * 50)
-    couts = "  ".join(str(fitness(ind)) for ind in population)
-    print(f"Level 0 (Initial)  : {couts}")
+    enregistrer(0, population)
+    couts_str = "  ".join(str(fitness(ind)) for ind in population)
+    print(f"Level 0 (Initial)  : {couts_str}")
 
     for gen in range(1, MAX_GEN + 1):
         nouvelle_population = [min(population, key=fitness)]
@@ -101,9 +107,10 @@ def algorithme_genetique():
             enfant = croisement(selection(population), selection(population))
             nouvelle_population.append(mutation(enfant))
         population = nouvelle_population
+        enregistrer(gen, population)
 
-        couts = "  ".join(str(fitness(ind)) for ind in population)
-        print(f"Level {gen} (Gen {gen})       : {couts}")
+        couts_str = "  ".join(str(fitness(ind)) for ind in population)
+        print(f"Level {gen} (Gen {gen})       : {couts_str}")
 
     meilleur = min(population, key=fitness)
     print("=" * 50)
@@ -113,4 +120,74 @@ def algorithme_genetique():
         print(f"  Agent {i+1} → Tâche {j+1}  (coût = {cost_matrix[i][j]})")
     print("=" * 50)
 
+    visualiser(historique_meilleur, historique_moyen, historique_pire, snapshots)
+
+    return meilleur
+
+
+def visualiser(meilleur_h, moyen_h, pire_h, snapshots):
+    generations = list(range(len(meilleur_h)))
+
+    BLEU   = "#2563EB"
+    ORANGE = "#F59E0B"
+    ROUGE  = "#EF4444"
+    VERT   = "#10B981"
+    GRIS   = "#6B7280"
+    BG     = "#F8FAFC"
+
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 6), facecolor=BG)
+    fig.suptitle("Algorithme Génétique — Visualisation de la Convergence",
+                 fontsize=15, fontweight='bold', color="#1E293B", y=1.02)
+
+    # ── Graphe 1 : Évolution du coût ─────────────────────────────────────────
+    ax1.set_facecolor(BG)
+    ax1.plot(generations, pire_h,     color=ROUGE,  lw=1.2, alpha=0.5, label="Pire")
+    ax1.fill_between(generations, pire_h, moyen_h,  color=ROUGE, alpha=0.07)
+    ax1.plot(generations, moyen_h,    color=ORANGE, lw=1.5, alpha=0.8, label="Moyen")
+    ax1.fill_between(generations, moyen_h, meilleur_h, color=BLEU, alpha=0.10)
+    ax1.plot(generations, meilleur_h, color=BLEU,   lw=2.2, label="Meilleur")
+
+    val_finale = meilleur_h[-1]
+    ax1.annotate(f"  Optimal = {val_finale}",
+                 xy=(generations[-1], val_finale),
+                 xytext=(-80, 20), textcoords="offset points",
+                 fontsize=9, color=BLEU,
+                 arrowprops=dict(arrowstyle="->", color=BLEU, lw=1.2))
+
+    ax1.set_title("Évolution du coût au fil des générations",
+                  fontsize=12, fontweight='bold', color="#1E293B", pad=8)
+    ax1.set_xlabel("Génération", fontsize=10, color=GRIS)
+    ax1.set_ylabel("Coût", fontsize=10, color=GRIS)
+    ax1.legend(fontsize=9, framealpha=0.8)
+    ax1.grid(True, linestyle='--', alpha=0.4)
+    ax1.spines[['top', 'right']].set_visible(False)
+
+    # ── Graphe 2 : Distribution finale ───────────────────────────────────────
+    ax2.set_facecolor(BG)
+    data = snapshots.get(MAX_GEN, [])
+    if data:
+        ax2.hist(data, bins=20, color=VERT, alpha=0.75,
+                 edgecolor='white', linewidth=0.5)
+        med = np.median(data)
+        ax2.axvline(min(data), color=BLEU, lw=1.5, linestyle='--',
+                    label=f"Min = {min(data)}")
+        ax2.axvline(med,       color=GRIS, lw=1.2, linestyle=':',
+                    label=f"Méd = {med:.0f}")
+
+    ax2.set_title(f"Distribution finale — Génération {MAX_GEN}",
+                  fontsize=12, fontweight='bold', color="#1E293B", pad=8)
+    ax2.set_xlabel("Coût", fontsize=10, color=GRIS)
+    ax2.set_ylabel("Nombre d'individus", fontsize=10, color=GRIS)
+    ax2.legend(fontsize=9, framealpha=0.8)
+    ax2.grid(True, linestyle='--', alpha=0.3, axis='y')
+    ax2.spines[['top', 'right']].set_visible(False)
+
+    plt.tight_layout()
+    plt.savefig("convergence_genetique.png", dpi=150, bbox_inches='tight',
+                facecolor=BG)
+    print("\n📊 Graphe sauvegardé → convergence_genetique.png")
+    plt.show()
+
+
+# ── Point d'entrée ────────────────────────────────────────────────────────────
 algorithme_genetique()
